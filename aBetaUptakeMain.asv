@@ -1,0 +1,1084 @@
+%basic image analysis for aBeta uptake
+% 10_1_25
+
+%% 1) loading everything and setting initial parameters
+%load images (these are spearated into three channels, C1 Trem2 C2 aB C3
+%Nuclei)
+%this is designed for a 20x field of view. 
+
+addpath('/Users/pennerc/Documents/Documents - BGS-STU23-138/MATLAB/GPNMB_Global_Analysis/GPNMB-Global-Analysis');
+
+
+%Link the folder containing all image 
+
+homePath= '/Volumes/PC60/ABeta_Uptake/files_set2';
+
+
+%'/Volumes/PC60/ABeta_Uptake/files_set1'; 
+
+%'/Volumes/PC60/ABeta_Uptake/files_set2';
+% '/Volumes/PC60/ABeta_Uptake/viewable_tiffs_07302025'
+
+
+
+% we'll iterate through the directory
+allFilesAtPlay = dir(fullfile(homePath, '*.tif'));
+allFilesAtPlay = allFilesAtPlay(~startsWith({allFilesAtPlay.name}, '._')); % mac keeps these weird ghost files with ._ prefix
+
+
+
+%these values will change a bit between sets due to quality of images, 
+
+% mask making factors
+
+
+    nucMinSize=250; %Dapi Debris
+    nucMaxSize=8000;
+    nuccircCut=0.5;% this is a cutoff for the minimum circularity of a detected object, less circular objects tend to be debris n whatnot. 
+    nucStrelType='disk';
+    nucStrelRadiusSize=3; %this is the pixel radius of our structuring element. We first apply an erosion of all pixels to remove noise and then proceed with dilation procedure
+
+
+
+    %we can use the same pipeline for aB just shifting size threshold and
+    %removing our Circularity requirement
+    aBcircCut=0; % this is a cutoff for the minimum circularity of a detected object, less circular objects tend to be debris n whatnot.  
+    aBmaxSize=30000; % 
+    aBminSize=50;
+    aBstrelType='arbitrary'; %don't want to bias shape of aB 
+    aBstrelRadiusSize=3;
+
+
+
+    %the Trem2 stain is a bit fussier, originally I did a mixed approach
+    %but actually just local separation with super high intensity works
+    %well
+    
+    T2maxSize=30000; % 
+    T2minSize=400; %  edges of neurites sometimes separated by strel
+    T2detectSensitivity=.5;
+    T2strelRadiusSize=5; %here strel type is always arbitrary
+    T2CircCut=0;
+    T2strelType='arbitrary';
+
+
+%plotting parameters
+    demoPlot=false; %for initial testing of factors this will output masks for each of the fluorescent channels  to facilitate tweaking
+    totPlot=false; % for outputting the final overlayed mask in comparison to the originial image. Imp to note this is pre fluorescent image. 
+
+% analysis parameters
+   aBDistCutoff=70; % this is the allowable distance (in pixels) for an aB object from a given nucleus. This was generated based on visual assesment
+   %of distance distribution (calculated in section 4 below)
+   aBFluoroCutoff=75; %this is the minimum fluoro for an object to be considered "real" It was calaculated through visual assesment of the fluoro distribution
+   % this was output in section 3 below
+
+
+
+
+% outputting the image names to iterate through
+
+nameCollect=[];
+for bb=1:length(allFilesAtPlay)
+    nameAtPlay=allFilesAtPlay(bb).name;
+    nameCollect{bb}=nameAtPlay(1:6);
+
+end
+
+   
+allNames=unique(nameCollect);
+
+%holding variables for our mask feature outputs
+nucMaskCollect=cell(1,length(allNames)); nucFeatureCollect= cell(1,length(allNames));rawNucCollect= cell(1,length(allNames));
+aBMaskCollect=cell(1,length(allNames)); aBFeatureCollect= cell(1,length(allNames)); rawABCollect= cell(1,length(allNames));
+T2MaskCollect=cell(1,length(allNames)); T2FeatureCollect= cell(1,length(allNames)); rawT2Collect= cell(1,length(allNames));
+
+
+
+
+%% 2) capturing basic masks for all channels as well as raw data
+    %iterating through each name. this will contain three different
+    %channels this will take a while
+
+
+
+%initializing wait bar
+f = waitbar(0, 'Starting');
+  
+ for dd=1:length(allNames)
+         %I'm fairly certain I could just iterate through in sets of 3, but
+         %I want to be agnostic to ordering in case that's not always true.
+     nameBaseAtPlay=allNames{dd};
+%for set 1
+
+     % nuclearImAtPlay=imread( [homePath,'/',nameBaseAtPlay,'_C3_viewable.tif']); rawNucCollect{dd}=nuclearImAtPlay; % I grab the raw images for downsttream plotting and intensity filtering
+     % Trem2ImAtPlay=imread( [homePath,'/',nameBaseAtPlay,'_C1_viewable.tif']);   rawT2Collect{dd}=Trem2ImAtPlay;
+     % aBImAtPlay=imread( [homePath,'/',nameBaseAtPlay,'_C2_viewable.tif']);      rawABCollect{dd}=aBImAtPlay;
+
+
+    nuclearImAtPlay=imread( [homePath,'/',nameBaseAtPlay,'_C1_MIP.tif']); rawNucCollect{dd}=nuclearImAtPlay; % I grab the raw images for downsttream plotting and intensity filtering
+      Trem2ImAtPlay=imread( [homePath,'/',nameBaseAtPlay,'_C2_MIP.tif']);   rawT2Collect{dd}=Trem2ImAtPlay;
+      aBImAtPlay=imread( [homePath,'/',nameBaseAtPlay,'_C3_MIP.tif']);      rawABCollect{dd}=aBImAtPlay;
+
+
+
+    [nucMaskCollect{dd},~,nucFeatureCollect{dd}] = aBNuclearMaskMaker(nuclearImAtPlay,nucMinSize, nucMaxSize, nuccircCut,nucStrelRadiusSize,nucStrelType,demoPlot);
+
+    
+if demoPlot
+  title('nuclear')  
+end
+
+    [aBMaskCollect{dd},~,aBFeatureCollect{dd}] = aBNuclearMaskMaker(aBImAtPlay,aBminSize, aBmaxSize, aBcircCut,aBstrelRadiusSize,aBstrelType,demoPlot);
+
+
+if demoPlot
+      title('aB')  
+
+end
+    [T2MaskCollect{dd},~,T2FeatureCollect{dd}] = aBNuclearMaskMakerTrem2Specific(Trem2ImAtPlay,T2minSize, T2maxSize, T2CircCut,T2strelRadiusSize,T2strelType, T2detectSensitivity, demoPlot);
+
+if demoPlot
+
+    title('trem2')  
+    
+end
+
+    waitbar(dd/length(allNames), f, sprintf('Progress: %d %%', floor( (dd/length(allNames))  *100)));
+    pause(0.1);
+
+
+
+     totIm = cat(3, aBImAtPlay, Trem2ImAtPlay, nuclearImAtPlay);     % 3D array HxWx3
+     maskImTot = cat(3, aBMaskCollect{dd}, T2MaskCollect{dd}, nucMaskCollect{dd});  
+    if totPlot  
+     figure
+     imshowpair(totIm,maskImTot,'montage')
+     title(["over view of  ", allNames{dd}])
+    end
+
+
+
+ end
+ disp('nice, everything loaded!')
+close(f)
+        % so this seems to mostly work.... because I'm using otsu for some of these it can pick up very low signal. So next we'll create an array of mean fluorescence for our TREM2
+   %and aBeta signals, this will help us create a fluorescence filter. I actually think a lot of these low signals, esp the TREm2 are real.  
+
+
+
+%% 3) loading all Fluoresences to generate a cutoff (you can do this automatically with just some kind of std metric but I think it's better to finesse it)
+
+
+aBFluoroCollect=[];
+T2FluoroCollect=[];
+            for tt=1:length(allNames)
+                    rawABIm= rawABCollect{tt};
+                    rawT2Im=rawT2Collect{tt};
+                    aBFeaturesAtPlay=aBFeatureCollect{tt};
+                    T2FeaturesAtPlay=T2FeatureCollect{tt};
+    
+                    for zz=1:height(aBFeaturesAtPlay)
+                        aBFluoroCollect(1+length(aBFluoroCollect))= nanmean(rawABIm(aBFeaturesAtPlay.PixelIdxList{zz})  ); %simply grab the pixel values found in the space of our mask
+    
+                    end
+    
+                    for zz=1:height(T2FeaturesAtPlay)
+                    
+                        T2FluoroCollect(1+length(T2FluoroCollect))= nanmean(rawT2Im(T2FeaturesAtPlay.PixelIdxList{zz})  ); %likewise for trem2
+    
+                    end
+            end
+
+% based on just looking it seems like a Fluoro Cut off of 10 is reasonable
+% for both channels. There is a clear high degree of low signal Trem2, less
+% so for aB. 
+
+             % 
+             % figure
+             % histogram(T2FluoroCollect)
+
+            figure
+            histogram(aBFluoroCollect)
+
+hold on
+
+  
+            histogram(allFluoro)
+
+
+
+
+            % 
+            %  figure
+            % histogram(T2FluoroCollect(T2FluoroCollect<25))
+
+
+
+
+%% 4) now doing a similar analysis to establish analysis parameters
+% by looking at the distance from nucleus to putative aB object IMO this
+% didn't really work, I think this really underestimated the distance to
+% real objects. I basically generated this value by looking at a lot of
+% different outputs across various conditions. 
+% 
+% 
+% nucDistanceCollect=[];
+%             for tt=1: length(allNames)
+% 
+%                     rawABIm= rawABCollect{tt};
+%                     aBFeaturesAtPlay=aBFeatureCollect{tt};
+%                     abMaskAtPlay=aBMaskCollect{tt};
+%                     nucFeaturesAtPlay=nucFeatureCollect{tt};
+% 
+% 
+%                        if ~isempty(aBFeaturesAtPlay)
+%                         %eucDist=pdist2(nucFeaturesAtPlay.Centroid, aBFeaturesAtPlay.Centroid  );
+%                         distMap = bwdist(abMaskAtPlay, 'euclidean');
+% 
+%                             rows = round(nucFeaturesAtPlay.Centroid(:,2));  % y = row
+%                             cols = round(nucFeaturesAtPlay.Centroid(:,1));  % x = col
+% 
+%                             idx = sub2ind(size(distMap), rows, cols);
+%                             eucDist = distMap(idx);
+%                             eucDist = eucDist(:).'; %so this isn't perfect but I'm just using this for my rough cut offs (ie what I'll consider within a reasonable distance of a nucleus
+%                             %We take the distance from the nuclei centroid
+%                             %to the nearest positive location in the aB
+%                             %mask.
+% 
+% 
+%                             nucDistanceCollect=[nucDistanceCollect,eucDist];
+%                        else
+%                             nucDistanceCollect= [nucDistanceCollect, nan(1, height(nucFeaturesAtPlay))];
+%                        end                        
+%             end
+% 
+% 
+% 
+% 
+%             figure
+% 
+%             histogram(nucDistanceCollect(nucDistanceCollect<100));
+% 
+% 
+
+            
+            %  seems like 1 or 2 is the right cutoff really most seem to be
+            %  directly adjacent to an aB 
+
+
+            %% 5) alright analysis time finally
+
+
+
+            % we will iterate through each name, and then anchor analyses
+            % on a per nucleus basis. 
+
+        numAbSpotsTot=nan(1,length(allNames)); % this will be the number of aB spots within our radius of a nuclei
+        avgAbFluoroTot=nan(1,length(allNames)); %likewise for aB fluro
+        avgAreaAbTot=nan(1,length(allNames)); %likewise for aB area
+
+        numAbCellProx=nan(1,length(allNames)); % this will be the ratio of cells with at least one aB object within their radius 
+
+        numAbSpotsCellProx=nan(1,length(allNames)); % this will be the number of aB spots in an image (normalized to nuclei count)
+        avgAbFluoroCellProx=nan(1,length(allNames)); % this will be the average fluoresence across the whole image
+        avgAreaAbSpotsCellProx=nan(1,length(allNames)); % likewise with area
+
+
+                T2AreaCollectTotAB=nan(1,length(allNames));
+                T2fluoroCollectAB=nan(1,length(allNames));
+                T2DistCollectAB=nan(1,length(allNames));
+
+                T2AreaCollectTotNonAB=nan(1,length(allNames));
+                T2fluoroCollectNonAB=nan(1,length(allNames));
+                T2DistCollectNonAB=nan(1,length(allNames));
+
+ 
+%initializing wait bar
+f = waitbar(0, 'Starting');
+
+
+            for tt=1: length(allNames)
+
+                nucFeaturesAtPlay=nucFeatureCollect{tt}; % loop through nuclei in a given image
+    
+                rawABIm= rawABCollect{tt}; % to grab fluoresence 
+                aBFeaturesAtPlay=aBFeatureCollect{tt};% for size and location
+                abMaskAtPlay=aBMaskCollect{tt}; % for mapping
+                aBDistMap = bwdist(abMaskAtPlay, 'euclidean');
+    
+    
+                 rawTremIm= rawT2Collect{tt}; % to grab fluoresence 
+                 tremFeaturesAtPlay=T2FeatureCollect{tt};% for size and location
+                 tremMaskAtPlay=T2MaskCollect{tt};
+                 tremDistMap = bwdist(tremMaskAtPlay, 'euclidean');
+
+
+                aBAreaCollectNuc=nan(1,height(nucFeaturesAtPlay));
+                aBFluoroCollectNuc=nan(1,height(nucFeaturesAtPlay));
+                abTrueFalseNuc=false(1,height(nucFeaturesAtPlay));
+                aBCountCollect=false(1,height(nucFeaturesAtPlay));
+
+
+                aBAreaCollectTot=nan(1,height(nucFeaturesAtPlay));
+                aBFluoroCollectTot=nan(1,height(nucFeaturesAtPlay));
+                abTrueFalseTot=false(1,height(nucFeaturesAtPlay));
+
+
+                T2AreaCollectNucAB=nan(1,height(nucFeaturesAtPlay));
+                T2fluoroCollectNucAB=nan(1,height(nucFeaturesAtPlay));
+                T2DistCollectNucAB=nan(1,height(nucFeaturesAtPlay));
+
+                T2AreaCollectNucNonAB=nan(1,height(nucFeaturesAtPlay));
+                T2fluoroCollectNucNonAB=nan(1,height(nucFeaturesAtPlay));
+                T2DistCollectNucNonAB=nan(1,height(nucFeaturesAtPlay));
+
+
+                blankMap=false(size(rawABIm));
+
+
+                                        mapHoldaB=cell(1, height(aBFeaturesAtPlay));
+                                     for cc=1:height(aBFeaturesAtPlay)
+                                       mapperSupreme= blankMap; mapperSupreme(aBFeaturesAtPlay.PixelIdxList{cc})=true;
+                                       mapHoldaB{cc}=bwdist(mapperSupreme, 'euclidean');
+                                     end
+
+
+                                             mapHoldT2=cell(1, height(tremFeaturesAtPlay));
+                                     for cc=1:height(tremFeaturesAtPlay)
+                                       mapperSupreme= blankMap; mapperSupreme(tremFeaturesAtPlay.PixelIdxList{cc})=true;
+                                       mapHoldT2{cc}=bwdist(mapperSupreme, 'euclidean');
+                                     end
+
+
+               
+
+                                %first grab all aB objects within 2 pixels of a given nucleus (anchored to cells) 
+                      for dd=1:height(nucFeaturesAtPlay)
+  
+% nucleus should always be in the midst of a trem2 object, unless it
+% doesn't exist
+
+                                      rows = round(nucFeaturesAtPlay.Centroid(dd,2));  % y = row
+                                      cols = round(nucFeaturesAtPlay.Centroid(dd,1));  % x = col
+                                      idx = sub2ind(size(aBDistMap), rows, cols);
+
+% this is a little dangerous since this will always output SOMETHING but we
+% can filter based on distance and fluoresence downstream
+                               
+                                     eucDistTrem=[];
+                                     for gg=1:height(tremFeaturesAtPlay)
+                                       eucDistTrem(gg)=mapHoldT2{gg}(idx);
+                                     end
+if ~isempty(tremFeaturesAtPlay)
+%trem2DistRough=pdist2(nucFeaturesAtPlay.Centroid(dd,:), tremFeaturesAtPlay.Centroid  ); % get the distance from our queried nucleus to each trem2object
+                                [~,trem2Idx]= min(eucDistTrem);
+                                T2FluoroAtPlay=nanmean(rawTremIm(tremFeaturesAtPlay.PixelIdxList{trem2Idx}));
+                                T2AreaAtPlay=tremFeaturesAtPlay.Area(trem2Idx);
+                                T2DistAtPlay=eucDistTrem(trem2Idx);
+
+                                if T2DistAtPlay >25 || T2FluoroAtPlay <10 % really hard for me to pick a fluoresence threshold, this is weirdly homogenous? Maybe some kind of issue
+                                    T2DistAtPlay=nan;
+                                    T2AreaAtPlay=nan;
+                                    T2FluoroAtPlay=nan;
+                                end
+
+
+elseif isempty(tremFeaturesAtPlay)
+
+                                    T2DistAtPlay=nan;
+                                    T2AreaAtPlay=nan;
+                                    T2FluoroAtPlay=nan;
+
+end
+
+                                
+    
+
+
+                           if ~isempty(aBFeaturesAtPlay) % if there are any aB objects to begin with
+
+
+
+
+
+                                        eucDistaB=[];
+                                     for gg=1:height(aBFeaturesAtPlay)
+                                       eucDistaB(gg)=mapHoldaB{gg}(idx);
+                                     end
+
+                                    
+
+
+
+                                    %step 5A making maps for each aB object... probably an easier way  to solve this
+
+                                     abIdx=find(eucDistaB'<=aBDistCutoff)  ; % first we apply the distance cutoff
+
+                
+                               % eucDist=pdist2(nucFeaturesAtPlay.Centroid(dd,:), aBFeaturesAtPlay.Centroid  ); % get the distance from our queried nucleus to each aBObject
+                
+                                         if ~isempty(abIdx) % if we have any objects that are within our distance
+        
+                                             aBPowerCollectLocal=nan(1, length(abIdx));
+                                             aBAreaCollectLocal=nan(1, length(abIdx));
+                                                %step 5B iterating through
+                                                %the idx of possible aB
+                                                %candidates and outputing
+                                                %the area and fluoro of
+                                                %each
+    
+                                                 for bb=1:length(abIdx) 
+                                                     aBPowerCollectLocal(bb)= nanmean(rawABIm(aBFeaturesAtPlay.PixelIdxList{abIdx(bb)}));
+                                                     aBAreaCollectLocal(bb)= ((aBFeaturesAtPlay.Area(abIdx(bb))));
+                                                 end
+                                                 % aBAreaCollectLocal(aBPowerCollectLocal <=10)=nan;
+                                                 % [~,candidateAbObjectIdx]= max(aBAreaCollectLocal);
+            
+                                                     if sum(aBPowerCollectLocal >=aBFluoroCutoff)>0 % if there are objects above our threshold
+                                                        aBAreaCollectNuc(dd)=nanmean(aBAreaCollectLocal(aBPowerCollectLocal>=aBFluoroCutoff));
+                                                        aBFluoroCollectNuc(dd)=nanmean(aBPowerCollectLocal(aBPowerCollectLocal>=aBFluoroCutoff));
+                                                        aBCountCollect(dd)=length(abIdx);
+
+                                                        abTrueFalseNuc(dd)=true;
+
+
+                                                        T2fluoroCollectNucAB(dd)= T2FluoroAtPlay;
+                                                        T2AreaCollectNucAB(dd)=T2AreaAtPlay;
+                                                        T2DistCollectNucAB(dd)=T2DistAtPlay;
+
+                                                        T2fluoroCollectNucNonAB(dd)= nan;
+                                                        T2AreaCollectNucNonAB(dd)=nan;
+                                                        T2DistCollectNucNonAB(dd)=nan;
+                               
+
+                                                     else
+                                                        aBAreaCollectNuc(dd)=nan; % if there are no nearby aB objects it gets zerod
+                                                        aBFluoroCollectNuc(dd)=nan;
+                                                        aBCountCollect(dd)=0;
+                                                        abTrueFalseNuc(dd)=false;
+
+                                                        T2fluoroCollectNucAB(dd)= nan;
+                                                        T2AreaCollectNucAB(dd)=nan;
+                                                        T2DistCollectNucAB(dd)=nan;
+
+                                                        T2fluoroCollectNucNonAB(dd)= T2FluoroAtPlay;
+                                                        T2AreaCollectNucNonAB(dd)=T2AreaAtPlay;
+                                                        T2DistCollectNucNonAB(dd)=T2DistAtPlay;
+                                                     end
+                                         else
+                                            aBAreaCollectNuc(dd)=nan;
+                                            aBFluoroCollectNuc(dd)=nan; % if there are no abeta objects that pass the dist threshold everything is zeroed!
+                                            aBCountCollect(dd)=0;
+                                            abTrueFalseNuc(dd)=false;
+
+                                            T2fluoroCollectNucAB(dd)= nan;
+                                            T2AreaCollectNucAB(dd)=nan;
+                                            T2DistCollectNucAB(dd)=nan;
+
+                                            T2fluoroCollectNucNonAB(dd)= T2FluoroAtPlay;
+                                            T2AreaCollectNucNonAB(dd)=T2AreaAtPlay;
+                                            T2DistCollectNucNonAB(dd)=T2DistAtPlay;
+                                         end
+                           else
+                                 aBAreaCollectNuc(dd)=nan;
+                                aBFluoroCollectNuc(dd)=nan; % if there are no abeta objects period everything is zeroed!
+                                aBCountCollect(dd)=0;
+
+                                abTrueFalseNuc(dd)=false;
+
+                                T2fluoroCollectNucAB(dd)= nan;
+                                T2AreaCollectNucAB(dd)=nan;
+                                T2DistCollectNucAB(dd)=nan;
+    
+                                T2fluoroCollectNucNonAB(dd)= T2FluoroAtPlay;
+                                T2AreaCollectNucNonAB(dd)=T2AreaAtPlay;
+                                T2DistCollectNucNonAB(dd)=T2DistAtPlay;
+
+                           end 
+
+
+
+% if testTime
+% 
+% figure
+%  mapperSupreme= blankMap; mapperSupreme(nucFeaturesAtPlay.PixelIdxList{dd})=true;
+% maskImTot = cat(3, mapperSupreme, tremMaskAtPlay, nan(size(tremMaskAtPlay)));  
+% 
+% imshowpair(maskImTot,rawTremIm,'montage')
+% 
+% title(['nucleus ', num2str(dd), ' T2Dist=', num2str(T2DistAtPlay), ' T2Fluoro=',num2str(T2FluoroAtPlay) ])
+% end
+% 
+% 
+% b=1;
+
+
+
+                      end
+
+
+
+
+                        for cc=1:height(aBFeaturesAtPlay)
+                      aBFluoroCollectTot(cc)=nanmean(rawABIm(aBFeaturesAtPlay.PixelIdxList{cc}));
+                      aBAreaCollectTot(cc)=aBFeaturesAtPlay.Area(cc);
+                        end
+
+
+        numAbSpotsCellProx(tt)=nanmean(aBCountCollect); % this will be the number of aB spots within our radius of a nuclei
+        avgAbFluoroCellProx(tt)=nanmean(aBFluoroCollectNuc); %likewise for aB fluro
+        avgAreaAbSpotsCellProx(tt)=nanmean(aBAreaCollectNuc); %likewise for aB area
+
+        numAbCellProx(tt)= sum(abTrueFalseNuc)/  (length(abTrueFalseNuc)); % this will be the ratio of cells with at least one aB object within their radius 
+
+        avgAbFluoroTot(tt)=nanmean(aBFluoroCollectTot(aBFluoroCollectTot>= aBFluoroCutoff )); % this will be the number of aB spots in an image (normalized to nuclei count)
+        avgAreaAbTot(tt)=nanmean(aBAreaCollectTot(aBFluoroCollectTot>= aBFluoroCutoff ) ); % this will be the average fluoresence across the whole image
+        numAbSpotsTot(tt)=  (sum(aBFluoroCollectTot>= aBFluoroCutoff )   / height(nucFeaturesAtPlay)  ); % likewise with area
+
+                T2AreaCollectTotAB(tt)=nanmean(T2AreaCollectNucAB);
+                T2fluoroCollectAB(tt)=nanmean(T2fluoroCollectNucAB);
+                T2DistCollectAB(tt)=nanmean(T2DistCollectNucAB);
+
+
+
+          
+
+                T2AreaCollectTotNonAB(tt)=nanmean(T2AreaCollectNucNonAB);
+                T2fluoroCollectNonAB(tt)=nanmean(T2fluoroCollectNucNonAB);
+                T2DistCollectNonAB(tt)=nanmean(T2DistCollectNucNonAB);
+               
+
+
+   waitbar(tt/length(allNames), f, sprintf('Analysis Progression: %d %%', floor( (tt/length(allNames))  *100)));
+    pause(0.1);
+
+            end
+
+
+
+%%
+
+    if set1
+    
+    set 1
+    WT=contains(allNames,'_01_')| contains(allNames,'_02_') | contains(allNames,'_03_') ;
+    HET=contains(allNames,'_04_')| contains(allNames,'_05_') | contains(allNames,'_06_') ;
+    KO1=contains(allNames,'_07_')| contains(allNames,'_08_') | contains(allNames,'_09_') ;
+    KO2=contains(allNames,'_10_')| contains(allNames,'_11_') | contains(allNames,'_12_') ;
+    
+
+    WT(  contains(allNames,'_01_') &  contains(allNames,'A')   )=false;
+    KO2(  contains(allNames,'_10_') &  contains(allNames,'B')   )   =false;
+    KO2(  contains(allNames,'_11_') &  contains(allNames,'C')   )   =false;
+
+    elseif set2
+ 
+     WT=contains(allNames,'_10_')| contains(allNames,'_11_') | contains(allNames,'_12_') ;
+     HET=contains(allNames,'_04_')| contains(allNames,'_05_') | contains(allNames,'_06_') ;
+     KO1=contains(allNames,'_07_')| contains(allNames,'_08_') | contains(allNames,'_09_') ;
+    
+    
+    PBS= contains(allNames,'A');
+    nM200=contains(allNames,'B');
+    uM1=contains(allNames,'C');
+
+    WT(  contains(allNames,'_11_') &  contains(allNames,'C')   )=false;
+    WT(  contains(allNames,'_10_') &  contains(allNames,'B')   )=false;
+    WT(  contains(allNames,'_12_') &  contains(allNames,'A')   )   =false;
+    KO1(  contains(allNames,'_01_') &  contains(allNames,'A')   )   =false;
+
+    elseif set3
+
+      WT=contains(set3AllNames,'_01_')| contains(set3AllNames,'_02_') | contains(set3AllNames,'_03_') | contains(set3AllNames,'_04_');
+      HET=contains(set3AllNames,'_06_')| contains(set3AllNames,'_07_') | contains(set3AllNames,'_08_') | contains(set3AllNames,'_09_');
+      KO=contains(set3AllNames,'_09_')| contains(set3AllNames,'_10_') | contains(set3AllNames,'_11_') | contains(set3AllNames,'_12_');
+
+
+    nM200= contains(allNames, 'B') | contains(allNames, 'C') ;
+    uM1= contains(allNames,'D');
+    uM200_555= contains(allNames, 'F') | contains(allNames, 'G') ;
+    uM1_555= contains(allNames,'H');
+
+
+    end
+
+
+
+
+
+    if ~set3
+    treatArray=nan(1,length(allNames)); treatArray(PBS)=0; treatArray(nM200)=1; treatArray(uM1)=2;
+    else
+    treatArray=nan(1,length(allNames)); treatArray(nM200)=1; treatArray(uM1)=2;
+    end
+
+
+randArray=cell(1,length(allNames));
+
+    for tt=1:length(allNames)
+randArray{tt}=(allNames{tt}(1:4));
+    end
+
+randArray=categorical(randArray);
+genoArray=nan(1,length(allNames)); genoArray(WT)=2; genoArray(HET)=1; genoArray(KO1)=0;
+
+%% normalizing values to PBS if possible! We don't have for set 3 currently 
+        
+
+if ~set3
+
+numAbSpotsCellProxNorm=nan(size(numAbSpotsCellProx));
+
+        numAbSpotsCellProxNorm(WT)=numAbSpotsCellProx(WT) / nanmean(numAbSpotsCellProx(WT & PBS)); % this will be the number of aB spots within our radius of a nuclei
+        numAbSpotsCellProxNorm(HET)=numAbSpotsCellProx(HET) / nanmean(numAbSpotsCellProx(HET & PBS)); 
+        numAbSpotsCellProxNorm(KO1)=numAbSpotsCellProx(KO1) / nanmean(numAbSpotsCellProx(KO1 & PBS)); 
+
+        numAbCellProxNorm=nan(size(numAbCellProx));
+
+
+        numAbCellProxNorm(WT)=numAbCellProx(WT) / nanmean(numAbCellProx(WT & PBS)); 
+        numAbCellProxNorm(HET)=numAbCellProx(HET) / nanmean(numAbCellProx(HET & PBS)); 
+        numAbCellProxNorm(KO1)=numAbCellProx(KO1) / nanmean(numAbCellProx(KO1 & PBS)); 
+
+        
+
+
+         numAbSpotsTotNorm=nan(size(numAbSpotsTot));
+
+
+        numAbSpotsTotNorm(WT)=numAbSpotsTot(WT) / nanmean(numAbSpotsTot(WT & PBS)); 
+        numAbSpotsTotNorm(HET)=numAbSpotsTot(HET) / nanmean(numAbSpotsTot(HET & PBS)); 
+        numAbSpotsTotNorm(KO1)=numAbSpotsTot(KO1) / nanmean(numAbSpotsTot(KO1 & PBS)); 
+
+        numAbSpotsTotNorm(numAbSpotsTotNorm >  (nanmean(numAbSpotsTotNorm)  + 4* nanstd(numAbSpotsTotNorm) )   )   =nan;
+
+
+    avgAreaAbSpotsCellProxNorm=nan(size(avgAreaAbSpotsCellProx));
+
+
+        avgAreaAbSpotsCellProxNorm(WT)=avgAreaAbSpotsCellProx(WT) / nanmean(avgAreaAbSpotsCellProx(WT & PBS)); 
+        avgAreaAbSpotsCellProxNorm(HET)=avgAreaAbSpotsCellProx(HET) / nanmean(avgAreaAbSpotsCellProx(HET & PBS)); 
+        avgAreaAbSpotsCellProxNorm(KO1)=avgAreaAbSpotsCellProx(KO1) / nanmean(avgAreaAbSpotsCellProx(KO1 & PBS)); 
+
+
+         avgAbFluoroCellProxNorm=nan(size(avgAreaAbSpotsCellProx));
+
+
+        avgAbFluoroCellProxNorm(WT)=avgAbFluoroCellProx(WT) / nanmean(avgAbFluoroCellProx(WT & PBS)); 
+        avgAbFluoroCellProxNorm(HET)=avgAbFluoroCellProx(HET) / nanmean(avgAbFluoroCellProx(HET & PBS)); 
+        avgAbFluoroCellProxNorm(KO1)=avgAbFluoroCellProx(KO1) / nanmean(avgAbFluoroCellProx(KO1 & PBS)); 
+
+
+
+        avgAbFluoroTotNorm=nan(size(avgAbFluoroTot)); %likewise for aB fluro
+
+      
+        avgAbFluoroTotNorm(WT)=avgAbFluoroCellProx(WT) / nanmean(avgAbFluoroTot(WT & PBS)); 
+        avgAbFluoroTotNorm(HET)=avgAbFluoroCellProx(HET) / nanmean(avgAbFluoroTot(HET & PBS)); 
+        avgAbFluoroTotNorm(KO1)=avgAbFluoroCellProx(KO1) / nanmean(avgAbFluoroTot(KO1 & PBS)); 
+
+
+
+ avgAreaAbTotNorm=nan(size(avgAbFluoroTot)); %likewise for aB fluro
+
+      
+        avgAreaAbTotNorm(WT)=avgAreaAbTot(WT) / nanmean(avgAreaAbTot(WT & PBS)); 
+        avgAreaAbTotNorm(HET)=avgAreaAbTot(HET) / nanmean(avgAreaAbTot(HET & PBS)); 
+        avgAreaAbTotNorm(KO1)=avgAreaAbTot(KO1) / nanmean(avgAreaAbTot(KO1 & PBS)); 
+
+
+
+else
+
+avgAreaAbTotNorm=nan(size(avgAbFluoroTot)); %likewise for aB fluro
+avgAbFluoroTotNorm=nan(size(avgAbFluoroTot)); %likewise for aB fluro
+avgAbFluoroCellProxNorm=nan(size(avgAreaAbSpotsCellProx));
+numAbSpotsTotNorm=nan(size(numAbSpotsTot));
+avgAreaAbSpotsCellProxNorm=nan(size(numAbSpotsTot));
+numAbCellProxNorm=nan(size(numAbCellProx));
+numAbSpotsCellProxNorm=nan(size(numAbCellProx));
+end
+
+
+
+
+
+%%
+
+
+val2Test=avgAreaAbTotNorm;
+val2Test(isinf(val2Test))=nan;
+
+val2Test(val2Test >    (nanmean(val2Test)  +4*nanstd(val2Test)  )     )=nan;
+
+
+
+ylablr=' Fold Change in number of cellular aB objects';
+
+titlr=' Fold Change in number of cellular aB objects (treatment/PBS)  ';
+
+
+treat1=nM200; treat1Name='200nM';
+treat2=uM1; treat2Name='uM1';
+
+
+
+
+figure
+hold on
+
+b=bar(1,nanmean(val2Test(WT & treat1)))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [.8 .2 .5]; 
+ylabel(ylablr,'FontSize',20)
+a=gca; a.XTickLabel=[];
+
+
+
+b=bar(3,nanmean(val2Test(HET & treat1)))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0 0.7 .25];
+
+
+b=bar(5,nanmean(val2Test(KO1 & treat1 )))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0.3 0.1 .6];
+
+
+b=bar(7,nanmean(val2Test((WT & treat2) )   ))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [.9 .1 .1]; 
+
+
+b=bar(9,nanmean(val2Test(HET & treat2)))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0.2 0.6 .3];
+
+
+
+b=bar(11,nanmean(val2Test(KO1 & treat2 )))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0.4 0.5 .7];
+
+
+hold on
+a=scatter(rand(1, sum((WT & treat1)))+.5, val2Test(WT & treat1), 'Marker', 'o' );
+a.CData=[.7 .3 .6]; 
+
+b=scatter(rand(1, sum(HET & treat1))+2.5, val2Test(HET & treat1), 'Marker', 'o' );
+b.CData(1,:) = [0 0.7 .25];
+
+c=scatter(rand(1, sum(KO1 & treat1))+4.5, val2Test(KO1 & treat1), 'Marker', 'o' );
+c.CData(1,:) = [0.3 0.1 .6];
+
+a=scatter(rand(1, sum((WT & treat2)))+6.5, val2Test(WT & treat2), 'Marker', 'o' );
+a.CData=[.9 .1 .1]; 
+
+
+b=scatter(rand(1, sum(HET & treat2))+8.5, val2Test(HET & treat2), 'Marker', 'o' );
+b.CData(1,:) = [0 0.9 .1];
+
+
+c=scatter(rand(1, sum(KO1 & treat2))+10.5, val2Test(KO1 & treat2), 'Marker', 'o' );
+c.CData(1,:) = [0.3 0.2 .7];
+
+
+legend({['WT ',treat1Name],...
+    ['HET ',treat1Name],...
+    ['KO ',treat1Name],...
+    ['WT ',treat2Name],...
+    ['HET ',treat2Name],...
+    ['KO' ,treat2Name]})
+
+
+
+title(titlr,'FontSize',30)
+
+% statistical testing
+
+
+% Build table
+glmeTable = table( val2Test(uM1)',...
+    treatArray(uM1)',...
+    (genoArray(uM1))',...
+    randArray(uM1)',...
+    'VariableNames', {'testVal','Treatment','GenoType','RandFactor'});
+
+
+
+fitglme(glmeTable, 'testVal~ 1+ GenoType + (1|RandFactor)')
+
+
+%anovan(val2Test(uM1), {genoArray(uM1)}  )
+
+
+
+
+
+% [p, tbl, stats] = kruskalwallis(val2Test(uM1), genoArray(uM1));
+
+
+%%
+
+
+figure
+histogram(T2FluoroCollectTot)
+
+
+
+
+                T2AreaCollectTotAB(tt)=nanmean(T2AreaCollectNucAB);
+                T2fluoroCollectAB(tt)=nanmean(T2fluoroCollectNucAB);
+                T2DistCollectAB(tt)=nanmean(T2DistCollectNucAB);
+
+
+
+          
+
+                T2AreaCollectTotNonAB(tt)=nanmean(T2AreaCollectNucNonAB);
+                T2fluoroCollectNonAB=nanmean(T2fluoroCollectNucNonAB);
+                T2DistCollectNonAB=nanmean(T2DistCollectNucNonAB);
+
+
+
+
+%%
+
+
+
+
+
+%%
+
+
+val2Test1=T2AreaCollectTotNonAB;
+val2Test2=T2AreaCollectTotAB;
+
+
+ylablr='Pixels';
+
+titlr='Average Intensity for TREM2 in cells with or without an Associated aβ Object';
+
+
+
+treatment2Test=uM1;
+
+figure
+hold on
+
+b=bar(1,nanmean(val2Test1(WT & treatment2Test)))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [.8 .2 .5]; 
+ylabel([ylablr],'FontSize',20)
+a=gca; a.XTickLabel=[];
+
+
+b=bar(3,nanmean(val2Test2((WT & treatment2Test) )   ))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [.7 .3 .6]; 
+a=gca; a.XTickLabel=[];
+
+
+
+b=bar(5,nanmean(val2Test1(HET & treatment2Test)))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0 0.7 .25];
+
+b=bar(7,nanmean(val2Test2(HET & treatment2Test)))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0 0.9 .1];
+
+
+
+b=bar(9,nanmean(val2Test1(KO1 & treatment2Test )))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0.3 0.1 .6];
+
+
+
+b=bar(11,nanmean(val2Test2(KO1 & treatment2Test )))  ;
+b.FaceColor = 'flat';
+b.FaceAlpha=.3;
+b.BarWidth=1.5;
+b.CData(1,:) = [0.3 0.2 .7];
+
+
+hold on
+a=scatter(rand(1, sum((WT & treatment2Test)))+.5, val2Test1(WT & treatment2Test), 'Marker', 'o' );
+a.CData=[.8 .2 .5]; 
+
+a=scatter(rand(1, sum((WT & treatment2Test)))+2.5, val2Test2(WT & treatment2Test), 'Marker', 'o' );
+a.CData=[.7 .3 .6]; 
+
+b=scatter(rand(1, sum(HET & treatment2Test))+4.5, val2Test1(HET & treatment2Test), 'Marker', 'o' );
+b.CData(1,:) = [0 0.7 .25];
+
+b=scatter(rand(1, sum(HET & treatment2Test))+6.5, val2Test2(HET & treatment2Test), 'Marker', 'o' );
+b.CData(1,:) = [0 0.9 .1];
+
+c=scatter(rand(1, sum(KO1 & treatment2Test))+8.5, val2Test1(KO1 & treatment2Test), 'Marker', 'o' );
+c.CData(1,:) = [0.3 0.1 .6];
+
+c=scatter(rand(1, sum(KO1 & treatment2Test))+10.5, val2Test2(KO1 & treatment2Test), 'Marker', 'o' );
+c.CData(1,:) = [0.3 0.2 .7];
+
+
+legend({'WT aB-','WT aB+', 'HET aB-','HET aB+','KO aB-','KO aB+'})
+
+
+title(titlr,'FontSize',25)
+
+% Build table
+glmeTable = table( val2Test2(nM200)',...
+    treatArray(nM200)',...
+    genoArray(nM200)',...
+    randArray(nM200)',...
+    'VariableNames', {'testVal','Treatment','GenoType','RandFactor'});
+
+
+
+fitglme(glmeTable, 'testVal~ 1+ GenoType + (1|RandFactor)')
+
+
+
+[n,p]=ttest(val2Test2(KO1 & nM200),val2Test1(KO1 & nM200)   )
+
+%% outputting everything as a table
+
+% Define column names
+colNames = { ...
+    "ImageCode", ...
+    "Ratio_of_Cells_Pos_for_aB", "Ratio_of_Cells_Pos_for_aB_normalized", ...
+    "avg_aB_Fluoro_within_Cells","avg_aB_Fluoro_within_Cells_normalized", ...
+    "avg_aB_area_within_Cells","avg_aB_area_within_Cells_normalized", ...
+    "total_aB_objects_normalized_to_nuclei_count","total_aB_objects_normalized_to_nuclei_count relative to PBS", ...
+    "avg_aB_Fluoro_Total_Image","avg_aB_Fluoro_Total_Image_normalized", ...
+    "avg_aB_Area_Total_Image","avg_aB_Area_Total_Image_normalized", ...
+    "Trem2_area_Pos_aB_Cells", ...
+    "Trem2_area_Neg_aB_Cells", ...
+    "Trem2_Fluoro_Pos_aB_Cells", ...
+    "Trem2_Fluoro_Neg_aB_Cells", ...
+    "Treatment",...
+    "Genotype"
+};
+
+
+colNames = [colNames{:}];
+
+
+% Build table
+allData = table( ...
+    allNames(:), ...
+    numAbCellProx(:), numAbCellProxNorm(:), ...
+    avgAbFluoroCellProx(:),avgAbFluoroCellProxNorm(:), ...
+    avgAreaAbSpotsCellProx(:),avgAreaAbSpotsCellProxNorm(:), ...
+    numAbSpotsTot(:),numAbSpotsTotNorm(:), ...
+    avgAbFluoroTot(:),avgAbFluoroTotNorm(:), ...
+    avgAreaAbTot(:), avgAreaAbTotNorm(:),...
+    T2AreaCollectTotAB(:), ...
+    T2AreaCollectTotNonAB(:), ...
+    T2fluoroCollectAB(:), ...
+    T2fluoroCollectNonAB(:), ...
+    treatArray(,...
+    'VariableNames', colNames ...
+);
+
+
+% Save to file
+outputPath = '/Users/pennerc/Desktop/allDataResults.xlsx';
+writetable(allData, outputPath);
+
+
+
+      numAbSpotsCellProx(tt)=nanmean(aBCountCollect); % this will be the number of aB spots within our radius of a nuclei
+        avgAbFluoroCellProx(tt)=nanmedian(aBFluoroCollectNuc); %likewise for aB fluro
+        avgAreaAbSpotsCellProx(tt)=nanmedian(aBAreaCollectNuc); %likewise for aB area
+
+        numAbCellProx(tt)= sum(abTrueFalseNuc)/  (length(abTrueFalseNuc)); % this will be the ratio of cells with at least one aB object within their radius 
+
+        avgAbFluoroTot(tt)=nanmean(aBFluoroCollectTot(aBFluoroCollectTot>= aBFluoroCutoff )); % this will be the number of aB spots in an image (normalized to nuclei count)
+        avgAreaAbTot(tt)=nanmean(aBAreaCollectTot(aBFluoroCollectTot>= aBFluoroCutoff ) ); % this will be the average fluoresence across the whole image
+        numAbSpotsTot(tt)=  (sum(aBFluoroCollectTot>= aBFluoroCutoff )   / height(nucFeaturesAtPlay)  ); % likewise with area
+
+                T2AreaCollectTotAB(tt)=nanmean(T2AreaCollectNucAB);
+                T2fluoroCollectAB(tt)=nanmean(T2fluoroCollectNucAB);
+                T2DistCollectAB(tt)=nanmean(T2DistCollectNucAB);
+
+
+
+          
+
+                T2AreaCollectTotNonAB(tt)=nanmean(T2AreaCollectNucNonAB);
+                T2fluoroCollectNonAB(tt)=nanmean(T2fluoroCollectNucNonAB);
+                T2DistCollectNonAB(tt)=nanmean(T2DistCollectNucNonAB);
+               
+
+
+
+%% Cemetery
+
+
+% figure
+% 
+% valAtPlay=avgAbFluoroCellProx;
+% 
+% bar([nanmean(valAtPlay(WT & nM200)  ), nanmean(valAtPlay(HET & nM200)  ), nanmean(valAtPlay(  )   ])
+% KO & nM200)
+% 
+% 
+% figure
+% 
+% 
+% bar([nanmean(valAtPlay(WT & uM1)  ), nanmean(valAtPlay(HET & uM1)  ), nanmean(valAtPlay(KO & uM1)  )   ])
+% 
+% 
+% 
+% 
+% figure
+% 
+% 
+% bar([nanmean(valAtPlay(WT & uM200_555)  ), nanmean(valAtPlay(HET & uM200_555)  ), nanmean(valAtPlay(KO & uM200_555)  )   ])
+
+
+
+     
+
+
+            % 
+% 
+% if testTime
+
+% figure
+%  mapperSupreme= blankMap; mapperSupreme(nucFeaturesAtPlay.PixelIdxList{dd})=true;
+% maskImTot = cat(3, abMaskAtPlay, mapperSupreme, nucMaskCollect{tt});  
+% 
+% imshowpair(maskImTot,rawABIm,'montage')
+% 
+% title(['nucleus ', num2str(dd), ' abIDx=', num2str(sum(abIdx))])
+% end
+
+% 
+% b=1;
+               

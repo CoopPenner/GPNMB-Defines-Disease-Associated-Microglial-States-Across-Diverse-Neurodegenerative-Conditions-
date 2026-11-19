@@ -1,0 +1,499 @@
+%scratch Track Analaysis 
+
+
+% addpath('/Users/pennerc/Documents/Documents - BGS-STU23-138/MATLAB/GPNMB_Global_Analysis/GPNMB-Global-Analysis');
+% % first upload relevant video
+% 
+% homePath= '/Volumes/PC60/iMicroVids/KOScratchAssay_6_6_25_allChannels/KO_aB'; %Link the folder containing all videos;
+% 
+% 
+%         %all videos are saved in the following way Genotype_ImageType_Treatment
+% % (a space) (number of video).mp4
+% % so for example: KO_Scratch_aB (1).mp4   Note the space between aB and (1)
+% genoTypePrefix1='KO';
+% genoType1Path='/Volumes/PC60/iMicroVids/KOScratchAssay_6_6_25_allChannels/KO_aB';
+% 
+% genoTypePrefix2='WT';
+% genoType2Path='/Volumes/PC60/iMicroVids/KOScratchAssay_6_6_25_allChannels/WT_aB';
+% 
+% 
+% 
+% imageTypePrefix='Scratch';
+% treatmentPrefix='aB';
+% 
+% outputSuffix='6_6_25';
+% 
+% frameRate=5; %one image every 5 minutes
+% 
+% 
+% 
+
+
+
+
+
+% runDefs = {
+%     'run_6_6_25',  'WT', '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/wt_ko_PBS_6_6_25/WT_PBS/ResultsRepo'
+%     'run_6_6_25',  'KO', '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/wt_ko_PBS_6_6_25/KO_PBS/ResultsRepo'
+%     'run_6_21_26', 'WT', '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/WTKOScratchAssayPBSOnly_6_21_26_allChannels/WT/ResultsRepo'
+%     'run_6_21_26', 'KO', '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/WTKOScratchAssayPBSOnly_6_21_26_allChannels/KO/ResultsRepo'
+%     'run_7_6_26',  'WT', '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/WT_KO_PBS_7_6_26/WT/ResultsRepo'
+%     'run_7_6_26',  'KO', '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/WT_KO_PBS_7_6_26/KO/ResultsRepo'
+% 
+% };
+
+
+% genoPaths = {
+%     '/Volumes/PC60/iMicroVids/KOScratchAssay_6_6_25_allChannels/KO_aB', ...
+%     '/Volumes/PC60/iMicroVids/KOScratchAssay_6_6_25_allChannels/WT_aB'
+% };
+%this is the sampling frequency
+imFreq=5;
+
+
+
+
+%%  initializing everryyyything
+genoTypes = {'KO', 'WT'};
+genoPaths = {
+    '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/WT_KO_PBS_7_6_26/KO/ResultsRepo', ...
+    '/Volumes/PC60/iMicroVids/setsPassedQC/PBS/WT_KO_PBS_7_6_26/WT/ResultsRepo'
+};
+
+%'/Volumes/PC60/iMicroVids/WTKOScratchAssayPBSOnly_6_21_26_allChannels/KO/ResultsRepo'
+%'/Volumes/PC60/iMicroVids/WTKOScratchAssayPBSOnly_6_21_26_allChannels/WT/ResultsRepo'
+%/Volumes/PC60/iMicroVids/KOScratchAssay_6_6_25_allChannels/KO_PBS
+%
+
+ % 
+ % '/Volumes/PC60/iMicroVids/wt_ko_Ab_7_7_26/KO/ResultsRepo', ...
+ % '/Volumes/PC60/iMicroVids/wt_ko_Ab_7_7_26/WT/ResultsRepo'
+
+% sets to use for PBS 6_21_26, 6_6_25, and 7_7_26 both June sets show sig
+% differences for all metrics 7_7_26 only for the global distance metric
+% (scratch count was not significant). 
+
+%sets to use for aB 6_21_26 and 7_7_26. 
+%
+
+
+
+
+
+
+
+treatmentPrefix = 'PBS';
+imageTypePrefix = 'Scratch';
+
+
+% Loop over genotypes 
+structAtPlay = struct([]);
+
+for dd = 1:length(genoTypes)
+    geno = genoTypes{dd};
+    folderPath = genoPaths{dd};
+
+    fileList = dir(fullfile(folderPath, '*.mat'));
+    fileList = fileList(~startsWith({fileList.name}, '._')); % remove macOS metadata files
+    fileList = fileList(contains({fileList.name}, 'scratchMetrics'));
+
+    for f = 1:length(fileList)
+        fileName = fileList(f).name;
+        fullPath = fullfile(folderPath, fileName);
+
+        loaded = load(fullPath);
+        metricsAtPlay = loaded.scratchMet;
+
+        % Extract video number from filename 
+        vidNum = regexp(fileName, '\((\d+)\)', 'tokens');
+        vidNum = str2double(vidNum{1});
+
+        if vidNum==1 || vidNum==2
+            wellPlate=1;
+        elseif vidNum==3 || vidNum==4
+            wellPlate=2;
+        elseif vidNum==5 || vidNum==6
+            wellPlate=3;
+        elseif vidNum==7 || vidNum==8
+            wellPlate=4;
+        end
+
+
+
+        % Append to structure array
+        structAtPlay(end+1).Genotype = geno;
+        structAtPlay(end).Treatment = treatmentPrefix;
+        structAtPlay(end).VideoNum = vidNum;
+        structAtPlay(end).wellPlate=wellPlate;
+
+        structAtPlay(end).InScratchCount = metricsAtPlay.inScratchCount;
+        structAtPlay(end).NearScratchCount = metricsAtPlay.nearScratchCount;
+        structAtPlay(end).TotObjects = metricsAtPlay.totObjects;
+        structAtPlay(end).AvgDistToScratch = metricsAtPlay.avgDistTot;
+        structAtPlay(end).StdDistToScratch = metricsAtPlay.stdDistTot;
+        structAtPlay(end).ScratchArea = metricsAtPlay.scratchSize;
+    end
+end
+
+
+
+%% setting up imaging basics
+
+
+    % Genotype colors
+    colorMap = struct('KO', [0.1 0.3 0.9], ...          % purple
+                      'WT', [19,105,70]/255);         % forest green
+
+    figure; hold on;
+    set(gcf, 'Color', 'w');
+    genotypes = {'KO', 'WT'};
+    alphaVal = 0.25;  % transparency for individual lines
+
+    %Pixel to uM transition previously calculated as  % ~1.13 µm/px based
+    %on a field of view of 1300 micrometers
+
+
+
+%%  ok first let's do average distance to scratch. We will first plot the average distance. We will then plot the cumulative sum of the velocity 
+%statistical testing will be done with a glme, output is the interaction
+%term between genotype and time passage with average distance as the
+%predicted variable. 
+
+
+
+  % if strcmp(measureAtPlay,'globalDist')
+  %   traces = {genoEntries.AvgDistToScratch};
+  %   elseif strcmp(measureAtPlay, 'scratchCount')
+  %       traces={genoEntries.NearScratchCount};
+  %   end
+
+
+  ylablr='Global Distance ';
+  measureAtPlay='globalDist'; %can only be 'globalDist' or 'scratchCount' For the time being
+hoursToPlot=8;
+
+plotStyle='errorBand';% anything other than errorBand will plot all lines
+normalizeToBaseline=true;
+
+[modelData]=scratchTrackLinePlotter(structAtPlay,measureAtPlay,ylablr, imFreq,hoursToPlot, genotypes,colorMap,alphaVal,treatmentPrefix,normalizeToBaseline,plotStyle);
+
+%alright time for statistical testing running a glme...
+
+% Fit GLME  and alt model
+glme = fitglme(modelData, ...
+    'Dist ~ 1 + TotCells + startVal+ scratchArea +  genotype * time  + (1|vidNum )', ...
+    'Distribution','normal','Link','identity')
+
+
+
+pVal = glme.Coefficients.pValue(7);
+sgtitle(['Ratio of Cells in Scratch  p= ' num2str(pVal) ],'FontSize',45) 
+
+
+
+% exportgraphics(gca, '/Volumes/PC60/iMicroVids/FinalFigures/Set2/NormalizedGlobalDistErrorBars.pdf', 'ContentType', 'vector')
+%% saving an excel
+% 
+
+savr=false;
+ if savr
+% 
+% 
+ writetable(modelData,'/Volumes/PC60/iMicroVids/RatioOfCells_PBS_SET2.csv')
+% 
+% 
+% 
+ end
+
+
+
+
+%% ok now time to do the same with our individual tracings
+
+
+structAtPlay = [];  % will become a table
+
+% ------------------------- Loop over genotypes -------------------------
+structAtPlay = struct([]);
+
+for dd = 1:length(genoTypes)
+    geno = genoTypes{dd};
+    folderPath = genoPaths{dd};
+
+    fileList = dir(fullfile(folderPath, '*.mat'));
+    fileList = fileList(~startsWith({fileList.name}, '._'));  % remove macOS metadata files
+    fileList = fileList(contains({fileList.name}, 'trajectoryMetrics'));
+
+    for f = 1:length(fileList)
+        fileName = fileList(f).name;
+        fullPath = fullfile(folderPath, fileName);
+
+        loaded = load(fullPath);
+        metricsAtPlay = loaded.velocitySummary;
+
+        % Loop over each nucleus (i.e. each entry in velocitySummary)
+        for nn = 1:length(metricsAtPlay)
+            structAtPlay(end+1).Genotype = geno;
+            structAtPlay(end).Treatment = treatmentPrefix;
+            structAtPlay(end).NucleusID = metricsAtPlay(nn).NucleusID;
+
+            structAtPlay(end).Rate = metricsAtPlay(nn).Rate_um_per_min;
+            structAtPlay(end).NetDisplacement = metricsAtPlay(nn).NetDisplacement;
+            structAtPlay(end).TotalPath = metricsAtPlay(nn).TotalPath;
+            structAtPlay(end).displacementRatio = metricsAtPlay(nn).displacementRatio;
+            structAtPlay(end).sharpTurnCount = metricsAtPlay(nn).sharpTurnCount;
+        end
+    end
+end
+
+
+val2use=[structAtPlay.TotalPath];
+netDispMat=[structAtPlay.NetDisplacement];
+dispRatMat=[structAtPlay.displacementRatio];
+
+
+
+
+conversionFactor = 0.65 / 1.13;
+correctedAverages = nan(numel(structAtPlay), 1);  % Preallocate
+numTimePoints=[];
+for qq = 1:numel(structAtPlay)
+    rate = structAtPlay(qq).Rate;
+    
+    if isnumeric(rate) && ~isempty(rate)
+        corrected = rate * conversionFactor;  % Convert each array
+        numTimePoints(qq)=length(corrected);
+        correctedAverages(qq) = mean(corrected, 'omitnan');  % Store average
+    else
+        correctedAverages(qq) = NaN;  % Handle empty/missing cases
+    end
+end
+
+
+
+
+
+
+
+
+val2use=[structAtPlay.TotalPath];
+netDispMat=[structAtPlay.NetDisplacement];
+dispRatMat=[structAtPlay.displacementRatio];
+
+
+
+%%
+
+figure
+
+% Define color map
+colorMap = struct('WT', [0.13 0.55 0.13], 'KO', [0.6 0.2 0.8]   ); 
+
+% Extract values
+val2use = [structAtPlay.displacementRatio];
+filter2use=numTimePoints>36 ;
+genotypes = {structAtPlay.Genotype};
+
+% Identify groups
+isWT = strcmp(genotypes, 'WT');
+isKO = strcmp(genotypes, 'KO');
+
+% Make plot
+figure; hold on;
+
+% KO Bar
+b = bar(1, nanmedian(val2use(isKO & filter2use )), 'FaceColor', colorMap.KO, 'FaceAlpha', 0.3, 'BarWidth', 1.2);
+scatter(rand(1, nansum(isKO& filter2use )) * 0.6 + 0.7, val2use(isKO& filter2use ), ...
+    'o', 'MarkerFaceColor', colorMap.KO, 'MarkerEdgeColor', colorMap.KO);
+
+% WT Bar
+b = bar(3, nanmedian(val2use(isWT& filter2use )), 'FaceColor', colorMap.WT, 'FaceAlpha', 0.3, 'BarWidth', 1.2);
+scatter(rand(1, nansum(isWT& filter2use )) * 0.6 + 2.7, val2use(isWT& filter2use ), ...
+    'o', 'MarkerFaceColor', colorMap.WT, 'MarkerEdgeColor', colorMap.WT);
+
+% Format
+xlim([0 4])
+set(gca, 'XTick', [1 3], 'XTickLabel', {'KO', 'WT'},'FontSize',15)
+ylabel('Displacement Ratio (\mum)','FontSize',20)
+title(' Displacement Ratio by Genotype')
+box on
+
+
+
+
+
+
+%exportgraphics(gca, '/Volumes/PC60/iMicroVids/FinalFigures/Set1/DisplacementRatio_2Hours.pdf', 'ContentType', 'vector')
+
+val2use = [structAtPlay.displacementRatio];
+
+genotypeCellArray={structAtPlay.Genotype};
+anovan(val2use(filter2use), {genotypeCellArray(filter2use)})
+
+
+
+
+diffCatch=[];
+count=1;
+for tt=0:12:160
+
+  filter2use=numTimePoints<=tt+12 & numTimePoints>tt ;
+
+  if sum(isWT& filter2use )<6 | sum(isKO & filter2use)<6
+
+      diffCatch(count)=0;
+  else
+   diffPoint=median(val2use(isWT& filter2use )) -   median(val2use(isKO & filter2use ));
+  end
+    diffCatch(count)=diffPoint;
+    count=count+1;
+
+
+end
+
+
+figure
+
+plot(diffCatch)
+
+
+% 
+% %%
+% 
+% 
+% genoType = {structAtPlay.Genotype};  
+% geno = contains((genoType), 'WT');  
+% 
+% 
+% anovan(netDispMat(numTimePoints<12), {geno(numTimePoints<12)})
+% 
+% 
+% 
+% 
+% figure
+% hold on
+% 
+% histogram(val2use(geno==1))
+% histogram(val2use(geno==0))
+% 
+% 
+% 
+% 
+% 
+% anovan(correctedAverages, {geno})
+
+
+%now but will make a caller function soon 
+% 
+% 
+% 
+% 
+% figure;
+% 
+% %  containers
+% traceCatchTot = [];
+% genoCatchTot = [];
+% timeCatchTot = [];
+% vidNumCatchTot = {};
+% countCatchTot = [];
+% scratchAreaCatchTot = [];
+% startValCatchTot=[];
+% frameRate=imFreq;
+% 
+% 
+% 
+% timeVec =   [0:imFreq:imFreq* (maxLength-2)] ;% Time in minutes
+% 
+% for gg = 1:numel(genotypes)
+%     geno = genotypes{gg};
+%     color = colorMap.(geno);
+% 
+%     % Get all entries for this genotype
+%     genoEntries = structAtPlay(strcmp({structAtPlay.Genotype}, geno));
+% 
+%     % Extract vectors
+%     totCounts = {genoEntries.TotObjects};
+%     traces = {genoEntries.AvgDistToScratch};
+%     trace2use={genoEntries.NearScratchCount};
+% 
+%     vidNums = [genoEntries.VideoNum];
+%     scratchAreas = [genoEntries.ScratchArea];
+%         traceMat=[];
+%     subplot(1, 2, gg);
+%     hold on;
+% 
+%     for jj = 1:numel(traces)
+% 
+% 
+%         trace = trace2use{jj}(2:maxLength);
+%         countz=totCounts{jj}(2:maxLength);
+% 
+%         traceAtPlay=trace'./countz';
+% 
+%         % Plot individual trace
+%         plot(timeVec, traceAtPlay, 'Color', [color alphaVal], 'LineWidth', 1);
+% 
+%         % Store values for GLME
+%         traceCatchTot = [traceCatchTot, traceAtPlay];
+%         genoCatchTot = [genoCatchTot, repmat({geno}, 1, (maxLength-1))];
+%         timeCatchTot = [timeCatchTot, timeVec ];
+%         vidNumCatchTot = [vidNumCatchTot, repmat({sprintf('%s_%d', geno, vidNums(jj))}, 1, (maxLength-1))];
+%         countCatchTot = [countCatchTot,countz' ];
+%         scratchAreaCatchTot = [scratchAreaCatchTot, (scratchAreas(jj)* ones(1, (maxLength-1)))  ];
+%         startValCatchTot=[startValCatchTot, (traceAtPlay(1)* ones(1, (maxLength-1)))];
+%         traceMat=[traceMat;traceAtPlay];
+%     end
+% 
+%     % Plot mean trace
+%     % allTraces = cellfun(@(x) x(1:maxLength), traceAtPlay, 'UniformOutput', false);
+%     % traceMat = cell2mat(cellfun(@(x) padarray(x(:)', [0, maxLength - length(x)], NaN, 'post'), allTraces, 'UniformOutput', false)');
+%     meanTrace = nanmean(traceMat, 1);
+%     plot(timeVec, meanTrace, '-', 'Color', color, 'LineWidth', 2.5);
+% 
+%     % Format subplot
+%     xlabel('Time (Minutes)','FontSize',20);
+%     ylabel('Ratio of Detected Cells in Scratch','FontSize', 20);
+%     title(sprintf('%s Microglia Treated with %s', geno, treatmentPrefix),'FontSize',30);
+%     box on;
+%     xlim([0, maxLength*frameRate]);
+% 
+%  %        subplot(2,2,3:4)
+%  %        hold on
+%  %    plot(timeVec, meanTrace, '-', 'Color', color, 'LineWidth', 2.5);
+%  % xlabel('Time (Minutes)');
+%  %    ylabel('Average Distance to Scratch');
+%  %    title(sprintf('%s Microglia Treated with %s', geno, treatmentPrefix));
+%  %    box on;
+%  %    xlim([0, maxLength*frameRate]);
+% 
+% end
+% 
+% 
+% %% alright time for statistical testing running a glme...
+% 
+% 
+% % make model  table
+% modelData = table( ...
+%     traceCatchTot(:), ...
+%     startValCatchTot(:),...
+%     vidNumCatchTot(:), ...
+%     countCatchTot(:), ...
+%     scratchAreaCatchTot(:), ...
+%     genoCatchTot(:), ...
+%     timeCatchTot(:), ...
+%     'VariableNames', {'Dist', 'startVal', 'vidNum', 'TotCells', 'scratchArea', 'genotype', 'time'} ...
+% );
+% 
+% 
+% modelData.vidNum = categorical(modelData.vidNum);
+% modelData.genotype = categorical(modelData.genotype);
+% 
+% % Fit GLME  and alt model
+% glme = fitglme(modelData, ...
+%     'Dist ~ 1 + startVal+ scratchArea + genotype * time + (1|vidNum)', ...
+%     'Distribution','normal','Link','identity');
+% 
+% 
+% pVal = glme.Coefficients.pValue(6);
+% sgtitle(['Comparative Ratio of Detected Cells in Scratch Over Time p= ' num2str(pVal) ],'FontSize',45) 
+% 
